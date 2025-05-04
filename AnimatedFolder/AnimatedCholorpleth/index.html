@@ -80,19 +80,19 @@
         </ol>
         <script>
 
-        var topoJSONFile = "data/us-10m.v1.json";
+        var topoJSONFile = "data/IowaCountyBoundaryTopo";
         //enter the name of the feature or geometry collection within the topoJSONFile
         // for example, for the default dataset us.objects.counties, enter counties
-        var featureCollection = "counties";
-        var csvFile = "data/unemployment_by_county_year.csv";
-        var attributeAlias = "Unemployment Rate (%)";
+        var featureCollection = "IowaCountyBoundary";
+        var csvFile = "data/LowBirthWeightIowaCounty.csv";
+        var attributeAlias = "Low Birth Weight (%)";
 
         // enter the minimum and maximum values of the attribute over years
         // one legend is created based on equal interval classification for all years.
-        var min = 0, max = 20;
+        var min = 3, max = 10;
 
         //enter the beginning year or date/time of animation.
-        var beginTime = 1990, endTime = 2017;
+        var beginTime = 2010, endTime = 2024;
 
         // width and height of map frame
         var height = 600;
@@ -100,7 +100,7 @@
 
         // Find the abbreviations of color names from https://colorbrewer2.org/
         var colors =  colorbrewer.Reds;
-        var numOfClasses = 9;
+        var numOfClasses = 7;
 
         //DO NOT CHANGE ANYTHING BELOW THIS POINT UNLESS YOU KNOW WHAT YOU ARE DOING
         ////////////////////////////////////////////////////////////////////////////////////////////////
