@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Earthquake Visualization with Slider</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    /* Basic styles for the slider label */
+    #dateLabel { 
+      font: 14px sans-serif;
+      margin: 10px;
+      display: block;
+    }
+    /* Optional: style the slider for better visibility */
+    #dateSlider {
+      width: 300px;
+      margin: 5px 0 20px 40px; /* some margin to align with SVG */
+    }
+    /* Style for quake circles (if needed) */
+    .quake {
+      stroke: #333;
+      stroke-width: 1px;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+
+<div id="chart"></div>  <!-- Container for the chart -->
+
+<script>
+// Set up SVG dimensions and margins
+const width = 800, height = 600;
+const margin = { top: 20, right: 20, bottom: 40, left: 20 };
+
+// Append SVG element to the page
+const svg = d3.select("#chart")
+  .append("svg")
+  .attr("width", width)
+  .attr("height", height);
+
+// Group for quake circles
+const g = svg.append("g").attr("id", "quakeGroup");
+
+// Append a label for the current date above the slider
+d3.select("body")
+  .append("div")
+  .append("label")
+  .attr("id", "dateLabel")
+  .text("");  // will be filled in after data load
+
+// Append the range input (slider)
+d3.select("body")
+  .append("div")
+  .append("input")
+  .attr("type", "range")
+  .attr("id", "dateSlider");
+
+// Load data files (JSON for points, CSV for attributes)
+const jsonFile = "files/EarthquakeApril28.json";  // path to JSON with coordinates
+const csvFile = "files/EarthquakeApril28.csv";     // path to CSV with date, id, magnitude, significance
+
+// Time parser for date strings (adjust format if needed)
+const parseDate = d3.timeParse("%Y-%m-%d");  // assuming YYYY-MM-DD format
+const formatDate = d3.timeFormat("%Y-%m-%d");
+
+// Use Promise to load both files in parallel
+Promise.all([
+  d3.json(jsonFile),
+  d3.csv(csvFile)
+]).then(([pointsData, csvData]) => {
+  // Prepare a lookup map for coordinates by id
+  const coordById = {};
+  if (Array.isArray(pointsData)) {
+    // If pointsData is an array of {id, lat, lon} or {id, x, y}
+    pointsData.forEach(pt => {
+      coordById[pt.id] = pt;
+    });
+  } else if (pointsData.features) {
+    // If pointsData is a GeoJSON FeatureCollection
+    pointsData.features.forEach(f => {
+      const id = f.id || (f.properties && f.properties.id);
+      let coords = f.geometry.coordinates;
+      // GeoJSON point coordinates are [lon, lat]
+      coordById[id] = { id: id, lon: coords[0], lat: coords[1] };
+    });
+  }
+
+  // Merge CSV data with coordinates
+  csvData.forEach(d => {
+    d.magnitude = +d.magnitude;
+    d.significance = +d.significance;
+    d.date = parseDate(d.date);
+    d.dateStr = formatDate(d.date);
+    // Attach coordinates from JSON by id (if available)
+    const coords = coordById[d.id];
+    if (coords) {
+      if (coords.x !== undefined && coords.y !== undefined) {
+        // If JSON provided x, y directly
+        d.x = +coords.x;
+        d.y = +coords.y;
+      } else if (coords.lon !== undefined && coords.lat !== undefined) {
+        d.lon = +coords.lon;
+        d.lat = +coords.lat;
+      }
+    }
+  });
+
+  // Define scales for mapping coordinates to SVG (if lat/lon given)
+  let xScale, yScale;
+  if (csvData[0].lon !== undefined) {
+    // If using latitude/longitude, set up linear scales for a pseudo-projection
+    const lonExtent = d3.extent(csvData, d => d.lon);
+    const latExtent = d3.extent(csvData, d => d.lat);
+    xScale = d3.scaleLinear().domain(lonExtent).range([margin.left, width - margin.right]);
+    yScale = d3.scaleLinear().domain(latExtent).range([height - margin.bottom, margin.top]);  // invert Y for lat
+  } else {
+    // If using already-projected x/y coordinates, scale to SVG
+    const xExtent = d3.extent(csvData, d => d.x);
+    const yExtent = d3.extent(csvData, d => d.y);
+    xScale = d3.scaleLinear().domain(xExtent).range([margin.left, width - margin.right]);
+    yScale = d3.scaleLinear().domain(yExtent).range([height - margin.bottom, margin.top]);
+  }
+
+  // Define scales for magnitude (size) and significance (color)
+  const magExtent = d3.extent(csvData, d => d.magnitude);
+  const sigExtent = d3.extent(csvData, d => d.significance);
+  const radiusScale = d3.scaleLinear().domain(magExtent).range([3, 15]);  // radius 3-15 px (adjustable)
+  const colorScale = d3.scaleLinear().domain(sigExtent).range(["#ffebaa", "#d62728"]);
+  // (Here "#ffebaa" is a light yellow, "#d62728" is a dark red; you can choose any colors)
+
+  // Extract unique dates in sorted order
+  const allDates = Array.from(new Set(csvData.map(d => d.dateStr))).sort();
+  // Configure the slider attributes
+  const slider = d3.select("#dateSlider")
+    .attr("min", 0)
+    .attr("max", allDates.length - 1)
+    .attr("step", 1)
+    .property("value", 0);  // start at the first date
+  // Display the initial date in the label
+  d3.select("#dateLabel").text("Date: " + allDates[0]);
+
+  // Function to update chart for a given date index
+  function updateChart(index) {
+    const dateKey = allDates[index];
+    // Update label
+    d3.select("#dateLabel").text("Date: " + dateKey);
+    // Filter data for the selected date
+    const events = csvData.filter(d => d.dateStr === dateKey);
+    // Data join for circles
+    const circles = g.selectAll("circle.quake").data(events, d => d.id);
+    // Remove old circles not in the new data
+    circles.exit().remove();
+    // Create new circles for new events
+    const enterSel = circles.enter().append("circle")
+      .attr("class", "quake")
+      .attr("cx", d => xScale(d.x !== undefined ? d.x : d.lon))
+      .attr("cy", d => yScale(d.y !== undefined ? d.y : d.lat))
+      .attr("r", d => radiusScale(d.magnitude))
+      .attr("fill", d => colorScale(d.significance));
+    // Merge enter + update selection and apply properties (in case of updates)
+    enterSel.merge(circles)
+      .attr("cx", d => xScale(d.x !== undefined ? d.x : d.lon))
+      .attr("cy", d => yScale(d.y !== undefined ? d.y : d.lat))
+      .attr("r", d => radiusScale(d.magnitude))
+      .attr("fill", d => colorScale(d.significance));
+  }
+
+  // Initial render for the first date
+  updateChart(0);
+
+  // Update chart on slider input
+  slider.on("input", function() {
+    const idx = +this.value;
+    updateChart(idx);
+  });
+  
+}).catch(error => {
+  console.error("Error loading data: ", error);
+});
+</script>
+
+</body>
+</html>
